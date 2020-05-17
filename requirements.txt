@@ -1,6 +1,9 @@
 kaggle
-opencv-python
 torch
+numpy
 pandas
-tensorflow
+sklearn
+transformers
+tokenizers
 tqdm
+
