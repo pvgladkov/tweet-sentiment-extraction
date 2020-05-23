@@ -11,8 +11,6 @@ from tqdm.autonotebook import tqdm
 import tse.utils as utils
 from tse.data import TweetDataset
 from tse.models import TweetModel
-from sklearn import model_selection
-
 
 # class KaggleTrainConfig:
 #     MAX_LEN = 128
@@ -29,6 +27,7 @@ from sklearn import model_selection
 #         f"{BERT_PATH}/vocab.txt",
 #         lowercase=True
 #     )
+from tse.utils import calculate_jaccard_score, create_folds
 
 
 class LocalTrainConfig:
@@ -51,22 +50,6 @@ class LocalTrainConfig:
 train_config = LocalTrainConfig
 
 
-def create_folds(config):
-    df = pd.read_csv(config.TRAIN_FILE)
-    df = df.dropna().reset_index(drop=True)
-    df["kfold"] = -1
-
-    df = df.sample(frac=1).reset_index(drop=True)
-
-    kf = model_selection.StratifiedKFold(n_splits=5)
-
-    for fold, (trn_, val_) in enumerate(kf.split(X=df, y=df.sentiment.values)):
-        print(len(trn_), len(val_))
-        df.loc[val_, 'kfold'] = fold
-
-    df.to_csv(config.TRAINING_FILE, index=False)
-
-
 def loss_fn(start_logits, end_logits, start_positions, end_positions):
     loss_fct = nn.CrossEntropyLoss()
     start_loss = loss_fct(start_logits, start_positions)
@@ -75,7 +58,33 @@ def loss_fn(start_logits, end_logits, start_positions, end_positions):
     return total_loss
 
 
-def train_fn(data_loader, model, optimizer, device, scheduler=None):
+def _batch_jaccard(outputs_start, outputs_end, batch):
+    orig_tweet = batch['orig_tweet']
+    orig_selected = batch['orig_selected']
+    sentiment = batch['sentiment']
+    offsets = batch['offsets']
+
+    outputs_start = torch.softmax(outputs_start, dim=1).cpu().detach().numpy()
+    outputs_end = torch.softmax(outputs_end, dim=1).cpu().detach().numpy()
+    jaccard_scores = []
+    filtered_outputs = []
+    for px, tweet in enumerate(orig_tweet):
+        selected_tweet = orig_selected[px]
+        tweet_sentiment = sentiment[px]
+        jaccard_score, f_output = calculate_jaccard_score(
+            original_tweet=tweet,
+            target_string=selected_tweet,
+            sentiment_val=tweet_sentiment,
+            idx_start=np.argmax(outputs_start[px, :]),
+            idx_end=np.argmax(outputs_end[px, :]),
+            offsets=offsets[px]
+        )
+        jaccard_scores.append(jaccard_score)
+        filtered_outputs.append(f_output)
+    return jaccard_scores, filtered_outputs
+
+
+def train_fn(data_loader, model, optimizer, device, scheduler):
     model.train()
     losses = utils.AverageMeter()
     jaccards = utils.AverageMeter()
@@ -84,78 +93,25 @@ def train_fn(data_loader, model, optimizer, device, scheduler=None):
 
     for bi, d in enumerate(tk0):
 
-        ids = d["ids"]
-        token_type_ids = d["token_type_ids"]
-        mask = d["mask"]
-        targets_start = d["targets_start"]
-        targets_end = d["targets_end"]
-        sentiment = d["sentiment"]
-        orig_selected = d["orig_selected"]
-        orig_tweet = d["orig_tweet"]
-        targets_start = d["targets_start"]
-        targets_end = d["targets_end"]
-        offsets = d["offsets"]
-
-        ids = ids.to(device, dtype=torch.long)
-        token_type_ids = token_type_ids.to(device, dtype=torch.long)
-        mask = mask.to(device, dtype=torch.long)
-        targets_start = targets_start.to(device, dtype=torch.long)
-        targets_end = targets_end.to(device, dtype=torch.long)
+        ids = d["ids"].to(device, dtype=torch.long)
+        token_type_ids = d["token_type_ids"].to(device, dtype=torch.long)
+        mask = d["mask"].to(device, dtype=torch.long)
+        targets_start = d["targets_start"].to(device, dtype=torch.long)
+        targets_end = d["targets_end"].to(device, dtype=torch.long)
 
         model.zero_grad()
-        outputs_start, outputs_end = model(
-            ids=ids,
-            mask=mask,
-            token_type_ids=token_type_ids,
-        )
+        outputs_start, outputs_end = model(ids=ids, mask=mask, token_type_ids=token_type_ids)
         loss = loss_fn(outputs_start, outputs_end, targets_start, targets_end)
+
         loss.backward()
         optimizer.step()
         scheduler.step()
 
-        outputs_start = torch.softmax(outputs_start, dim=1).cpu().detach().numpy()
-        outputs_end = torch.softmax(outputs_end, dim=1).cpu().detach().numpy()
-        jaccard_scores = []
-        for px, tweet in enumerate(orig_tweet):
-            selected_tweet = orig_selected[px]
-            tweet_sentiment = sentiment[px]
-            jaccard_score, _ = calculate_jaccard_score(
-                original_tweet=tweet,
-                target_string=selected_tweet,
-                sentiment_val=tweet_sentiment,
-                idx_start=np.argmax(outputs_start[px, :]),
-                idx_end=np.argmax(outputs_end[px, :]),
-                offsets=offsets[px]
-            )
-            jaccard_scores.append(jaccard_score)
+        jaccard_scores, _ = _batch_jaccard(outputs_start, outputs_end, d)
 
         jaccards.update(np.mean(jaccard_scores), ids.size(0))
         losses.update(loss.item(), ids.size(0))
         tk0.set_postfix(loss=losses.avg, jaccard=jaccards.avg)
-
-
-def calculate_jaccard_score(
-        original_tweet,
-        target_string,
-        sentiment_val,
-        idx_start,
-        idx_end,
-        offsets,
-        verbose=False):
-    if idx_end < idx_start:
-        idx_end = idx_start
-
-    filtered_output = ""
-    for ix in range(idx_start, idx_end + 1):
-        filtered_output += original_tweet[offsets[ix][0]: offsets[ix][1]]
-        if (ix + 1) < len(offsets) and offsets[ix][1] < offsets[ix + 1][0]:
-            filtered_output += " "
-
-    if sentiment_val == "neutral" or len(original_tweet.split()) < 2:
-        filtered_output = original_tweet
-
-    jac = utils.jaccard(target_string.strip(), filtered_output.strip())
-    return jac, filtered_output
 
 
 def eval_fn(data_loader, model, device):
@@ -166,43 +122,16 @@ def eval_fn(data_loader, model, device):
     with torch.no_grad():
         tk0 = tqdm(data_loader, total=len(data_loader))
         for bi, d in enumerate(tk0):
-            ids = d["ids"]
-            token_type_ids = d["token_type_ids"]
-            mask = d["mask"]
-            sentiment = d["sentiment"]
-            orig_selected = d["orig_selected"]
-            orig_tweet = d["orig_tweet"]
-            targets_start = d["targets_start"]
-            targets_end = d["targets_end"]
-            offsets = d["offsets"].numpy()
+            ids = d["ids"].to(device, dtype=torch.long)
+            token_type_ids = d["token_type_ids"].to(device, dtype=torch.long)
+            mask = d["mask"].to(device, dtype=torch.long)
+            targets_start = d["targets_start"].to(device, dtype=torch.long)
+            targets_end = d["targets_end"].to(device, dtype=torch.long)
 
-            ids = ids.to(device, dtype=torch.long)
-            token_type_ids = token_type_ids.to(device, dtype=torch.long)
-            mask = mask.to(device, dtype=torch.long)
-            targets_start = targets_start.to(device, dtype=torch.long)
-            targets_end = targets_end.to(device, dtype=torch.long)
-
-            outputs_start, outputs_end = model(
-                ids=ids,
-                mask=mask,
-                token_type_ids=token_type_ids
-            )
+            outputs_start, outputs_end = model(ids=ids, mask=mask, token_type_ids=token_type_ids)
             loss = loss_fn(outputs_start, outputs_end, targets_start, targets_end)
-            outputs_start = torch.softmax(outputs_start, dim=1).cpu().detach().numpy()
-            outputs_end = torch.softmax(outputs_end, dim=1).cpu().detach().numpy()
-            jaccard_scores = []
-            for px, tweet in enumerate(orig_tweet):
-                selected_tweet = orig_selected[px]
-                tweet_sentiment = sentiment[px]
-                jaccard_score, _ = calculate_jaccard_score(
-                    original_tweet=tweet,
-                    target_string=selected_tweet,
-                    sentiment_val=tweet_sentiment,
-                    idx_start=np.argmax(outputs_start[px, :]),
-                    idx_end=np.argmax(outputs_end[px, :]),
-                    offsets=offsets[px]
-                )
-                jaccard_scores.append(jaccard_score)
+
+            jaccard_scores, _ = _batch_jaccard(outputs_start, outputs_end, d)
 
             jaccards.update(np.mean(jaccard_scores), ids.size(0))
             losses.update(loss.item(), ids.size(0))
@@ -282,14 +211,19 @@ if __name__ == '__main__':
 
     create_folds(train_config)
 
+    print('fold 0')
     run(fold=0)
 
+    print('fold 1')
     run(fold=1)
 
+    print('fold 2')
     run(fold=2)
 
+    print('fold 3')
     run(fold=3)
 
+    print('fold 4')
     run(fold=4)
 
     df_test = pd.read_csv(train_config.TEST_FILE)
@@ -343,82 +277,22 @@ if __name__ == '__main__':
     with torch.no_grad():
         tk0 = tqdm(data_loader, total=len(data_loader))
         for bi, d in enumerate(tk0):
-            ids = d["ids"]
-            token_type_ids = d["token_type_ids"]
-            mask = d["mask"]
-            sentiment = d["sentiment"]
-            orig_selected = d["orig_selected"]
-            orig_tweet = d["orig_tweet"]
-            targets_start = d["targets_start"]
-            targets_end = d["targets_end"]
-            offsets = d["offsets"].numpy()
+            ids = d["ids"].to(device, dtype=torch.long)
+            token_type_ids = d["token_type_ids"].to(device, dtype=torch.long)
+            mask = d["mask"].to(device, dtype=torch.long)
 
-            ids = ids.to(device, dtype=torch.long)
-            token_type_ids = token_type_ids.to(device, dtype=torch.long)
-            mask = mask.to(device, dtype=torch.long)
-            targets_start = targets_start.to(device, dtype=torch.long)
-            targets_end = targets_end.to(device, dtype=torch.long)
+            outputs_start1, outputs_end1 = model1(ids=ids, mask=mask, token_type_ids=token_type_ids)
+            outputs_start2, outputs_end2 = model2(ids=ids, mask=mask, token_type_ids=token_type_ids)
+            outputs_start3, outputs_end3 = model3(ids=ids, mask=mask, token_type_ids=token_type_ids)
+            outputs_start4, outputs_end4 = model4(ids=ids, mask=mask, token_type_ids=token_type_ids)
+            outputs_start5, outputs_end5 = model5(ids=ids, mask=mask, token_type_ids=token_type_ids)
 
-            outputs_start1, outputs_end1 = model1(
-                ids=ids,
-                mask=mask,
-                token_type_ids=token_type_ids
-            )
+            outputs_start = (outputs_start1 + outputs_start2 + outputs_start3 + outputs_start4 + outputs_start5) / 5
+            outputs_end = (outputs_end1 + outputs_end2 + outputs_end3 + outputs_end4 + outputs_end5) / 5
 
-            outputs_start2, outputs_end2 = model2(
-                ids=ids,
-                mask=mask,
-                token_type_ids=token_type_ids
-            )
-
-            outputs_start3, outputs_end3 = model3(
-                ids=ids,
-                mask=mask,
-                token_type_ids=token_type_ids
-            )
-
-            outputs_start4, outputs_end4 = model4(
-                ids=ids,
-                mask=mask,
-                token_type_ids=token_type_ids
-            )
-
-            outputs_start5, outputs_end5 = model5(
-                ids=ids,
-                mask=mask,
-                token_type_ids=token_type_ids
-            )
-            outputs_start = (
-                                    outputs_start1
-                                    + outputs_start2
-                                    + outputs_start3
-                                    + outputs_start4
-                                    + outputs_start5
-                            ) / 5
-            outputs_end = (
-                                  outputs_end1
-                                  + outputs_end2
-                                  + outputs_end3
-                                  + outputs_end4
-                                  + outputs_end5
-                          ) / 5
-
-            outputs_start = torch.softmax(outputs_start, dim=1).cpu().detach().numpy()
-            outputs_end = torch.softmax(outputs_end, dim=1).cpu().detach().numpy()
-
-            for px, tweet in enumerate(orig_tweet):
-                selected_tweet = orig_selected[px]
-                tweet_sentiment = sentiment[px]
-                _, output_sentence = calculate_jaccard_score(
-                    original_tweet=tweet,
-                    target_string=selected_tweet,
-                    sentiment_val=tweet_sentiment,
-                    idx_start=np.argmax(outputs_start[px, :]),
-                    idx_end=np.argmax(outputs_end[px, :]),
-                    offsets=offsets[px]
-                )
-                final_output.append(output_sentence)
-
+            _, filtered_outputs = _batch_jaccard(outputs_start, outputs_end, d)
+            for s in filtered_outputs:
+                final_output.append(s)
 
     # post-process trick:
     # Note: This trick comes from: https://www.kaggle.com/c/tweet-sentiment-extraction/discussion/140942

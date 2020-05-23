@@ -1,5 +1,7 @@
 import numpy as np
+import pandas as pd
 import torch
+from sklearn import model_selection
 
 
 class AverageMeter:
@@ -71,3 +73,43 @@ def jaccard(str1, str2):
     b = set(str2.lower().split())
     c = a.intersection(b)
     return float(len(c)) / (len(a) + len(b) - len(c))
+
+
+def calculate_jaccard_score(
+        original_tweet,
+        target_string,
+        sentiment_val,
+        idx_start,
+        idx_end,
+        offsets,
+        verbose=False):
+    if idx_end < idx_start:
+        idx_end = idx_start
+
+    filtered_output = ""
+    for ix in range(idx_start, idx_end + 1):
+        filtered_output += original_tweet[offsets[ix][0]: offsets[ix][1]]
+        if (ix + 1) < len(offsets) and offsets[ix][1] < offsets[ix + 1][0]:
+            filtered_output += " "
+
+    if sentiment_val == "neutral" or len(original_tweet.split()) < 2:
+        filtered_output = original_tweet
+
+    jac = jaccard(target_string.strip(), filtered_output.strip())
+    return jac, filtered_output
+
+
+def create_folds(config):
+    df = pd.read_csv(config.TRAIN_FILE)
+    df = df.dropna().reset_index(drop=True)
+    df["kfold"] = -1
+
+    df = df.sample(frac=1).reset_index(drop=True)
+
+    kf = model_selection.StratifiedKFold(n_splits=5)
+
+    for fold, (trn_, val_) in enumerate(kf.split(X=df, y=df.sentiment.values)):
+        print(len(trn_), len(val_))
+        df.loc[val_, 'kfold'] = fold
+
+    df.to_csv(config.TRAINING_FILE, index=False)
