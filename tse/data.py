@@ -1,7 +1,7 @@
 import torch
 
 
-def process_data(tweet, selected_text, sentiment, tokenizer, max_len):
+def get_indexes(tweet, selected_text):
     len_st = len(selected_text)
     idx0 = None
     idx1 = None
@@ -10,13 +10,24 @@ def process_data(tweet, selected_text, sentiment, tokenizer, max_len):
             idx0 = ind
             idx1 = ind + len_st - 1
             break
+    return idx0, idx1
 
+
+def get_char_targets(tweet, idx0, idx1):
     char_targets = [0] * len(tweet)
-    if idx0 != None and idx1 != None:
+    if idx0 is not None and idx1 is not None:
         for ct in range(idx0, idx1 + 1):
             char_targets[ct] = 1
+    return char_targets
+
+
+def process_data(tweet, selected_text, sentiment, tokenizer, max_len):
+    idx0, idx1 = get_indexes(tweet, selected_text)
+    char_targets = get_char_targets(tweet, idx0, idx1)
 
     tok_tweet = tokenizer.encode(tweet)
+
+    # start from 1 to cut [CLS]
     input_ids_orig = tok_tweet.ids[1:-1]
     tweet_offsets = tok_tweet.offsets[1:-1]
 

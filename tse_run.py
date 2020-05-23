@@ -8,9 +8,9 @@ import tokenizers
 from transformers import AdamW
 from transformers import get_linear_schedule_with_warmup
 from tqdm.autonotebook import tqdm
-import tse.utils as utils
 from tse.data import TweetDataset
 from tse.models import TweetModel
+from tse.utils import create_folds, jaccard, AverageMeter, bert_output_to_string, EarlyStopping
 
 # class KaggleTrainConfig:
 #     MAX_LEN = 128
@@ -27,7 +27,6 @@ from tse.models import TweetModel
 #         f"{BERT_PATH}/vocab.txt",
 #         lowercase=True
 #     )
-from tse.utils import calculate_jaccard_score, create_folds
 
 
 class LocalTrainConfig:
@@ -71,14 +70,10 @@ def _batch_jaccard(outputs_start, outputs_end, batch):
     for px, tweet in enumerate(orig_tweet):
         selected_tweet = orig_selected[px]
         tweet_sentiment = sentiment[px]
-        jaccard_score, f_output = calculate_jaccard_score(
-            original_tweet=tweet,
-            target_string=selected_tweet,
-            sentiment_val=tweet_sentiment,
-            idx_start=np.argmax(outputs_start[px, :]),
-            idx_end=np.argmax(outputs_end[px, :]),
-            offsets=offsets[px]
-        )
+        f_output = bert_output_to_string(tweet, tweet_sentiment, np.argmax(outputs_start[px, :]),
+                                         np.argmax(outputs_end[px, :]), offsets[px])
+
+        jaccard_score = jaccard(selected_tweet.strip(), f_output.strip())
         jaccard_scores.append(jaccard_score)
         filtered_outputs.append(f_output)
     return jaccard_scores, filtered_outputs
@@ -86,8 +81,8 @@ def _batch_jaccard(outputs_start, outputs_end, batch):
 
 def train_fn(data_loader, model, optimizer, device, scheduler):
     model.train()
-    losses = utils.AverageMeter()
-    jaccards = utils.AverageMeter()
+    losses = AverageMeter()
+    jaccards = AverageMeter()
 
     tk0 = tqdm(data_loader, total=len(data_loader))
 
@@ -114,10 +109,16 @@ def train_fn(data_loader, model, optimizer, device, scheduler):
         tk0.set_postfix(loss=losses.avg, jaccard=jaccards.avg)
 
 
-def eval_fn(data_loader, model, device):
+def eval_fn(data_loader, model, device, epoch, fold):
     model.eval()
-    losses = utils.AverageMeter()
-    jaccards = utils.AverageMeter()
+    losses = AverageMeter()
+    jaccards = AverageMeter()
+
+    tweets = []
+    target_texts = []
+    predicted_texts = []
+    sentiments = []
+    scores = []
 
     with torch.no_grad():
         tk0 = tqdm(data_loader, total=len(data_loader))
@@ -131,13 +132,22 @@ def eval_fn(data_loader, model, device):
             outputs_start, outputs_end = model(ids=ids, mask=mask, token_type_ids=token_type_ids)
             loss = loss_fn(outputs_start, outputs_end, targets_start, targets_end)
 
-            jaccard_scores, _ = _batch_jaccard(outputs_start, outputs_end, d)
-
+            jaccard_scores, filtered_outputs = _batch_jaccard(outputs_start, outputs_end, d)
             jaccards.update(np.mean(jaccard_scores), ids.size(0))
             losses.update(loss.item(), ids.size(0))
             tk0.set_postfix(loss=losses.avg, jaccard=jaccards.avg)
 
-    print(f"Jaccard = {jaccards.avg}")
+            predicted_texts += filtered_outputs
+            scores += jaccard_scores
+            tweets += d['orig_tweet']
+            target_texts += d['orig_selected']
+            sentiments += d['sentiment']
+
+    df = pd.DataFrame({'tweet': tweets, 'target_text': target_texts,
+                       'predicted_text': predicted_texts, 'sentiment': sentiments, 'scores': scores})
+    file_name = f'debug_{epoch}_{fold}.csv'
+    df.to_csv(file_name, index=False, encoding='utf-8')
+    print(f'save {file_name}')
     return jaccards.avg
 
 
@@ -193,13 +203,13 @@ def run(fold):
         num_training_steps=num_train_steps
     )
 
-    es = utils.EarlyStopping(patience=2, mode="max")
+    es = EarlyStopping(patience=2, mode="max")
     print(f"Training is Starting for fold={fold}")
 
     # I'm training only for 3 epochs even though I specified 5!!!
     for epoch in range(3):
         train_fn(train_data_loader, model, optimizer, device, scheduler=scheduler)
-        jaccard = eval_fn(valid_data_loader, model, device)
+        jaccard = eval_fn(valid_data_loader, model, device, epoch, fold)
         print(f"Jaccard Score = {jaccard}")
         es(jaccard, model, model_path=f"model_{fold}.bin")
         if es.early_stop:

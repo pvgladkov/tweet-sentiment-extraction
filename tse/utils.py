@@ -75,14 +75,7 @@ def jaccard(str1, str2):
     return float(len(c)) / (len(a) + len(b) - len(c))
 
 
-def calculate_jaccard_score(
-        original_tweet,
-        target_string,
-        sentiment_val,
-        idx_start,
-        idx_end,
-        offsets,
-        verbose=False):
+def bert_output_to_string(original_tweet, sentiment_val, idx_start, idx_end, offsets):
     if idx_end < idx_start:
         idx_end = idx_start
 
@@ -95,8 +88,7 @@ def calculate_jaccard_score(
     if sentiment_val == "neutral" or len(original_tweet.split()) < 2:
         filtered_output = original_tweet
 
-    jac = jaccard(target_string.strip(), filtered_output.strip())
-    return jac, filtered_output
+    return filtered_output
 
 
 def create_folds(config):
