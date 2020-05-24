@@ -6,7 +6,7 @@ from torch import nn as nn
 class TweetModel(transformers.BertPreTrainedModel):
     def __init__(self, train_config, conf):
         super(TweetModel, self).__init__(conf)
-        self.bert = transformers.BertModel.from_pretrained(train_config.BERT_PATH, config=conf)
+        self.bert = transformers.RobertaModel.from_pretrained(train_config.BERT_PATH, config=conf)
         self.drop_out = nn.Dropout(0.1)
         self.l0 = nn.Linear(768 * 2, 2)
         torch.nn.init.normal_(self.l0.weight, std=0.02)

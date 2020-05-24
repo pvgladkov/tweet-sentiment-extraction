@@ -13,9 +13,9 @@ from tse.models import TweetModel
 from tse.utils import create_folds, jaccard, AverageMeter, bert_output_to_string, EarlyStopping
 
 # class KaggleTrainConfig:
-#     MAX_LEN = 128
-#     TRAIN_BATCH_SIZE = 64
-#     VALID_BATCH_SIZE = 16
+#     MAX_LEN = 192
+#     TRAIN_BATCH_SIZE = 32
+#     VALID_BATCH_SIZE = 8
 #     EPOCHS = 5
 #     BERT_PATH = "../input/bert-base-uncased/"
 #     MODEL_PATH = "model.bin"
@@ -23,26 +23,30 @@ from tse.utils import create_folds, jaccard, AverageMeter, bert_output_to_string
 #     TEST_FILE = "../input/tweet-sentiment-extraction/test.csv"
 #     TRAIN_FILE = "../input/tweet-sentiment-extraction/train.csv"
 #     SAMPLE_FILE = "../input/tweet-sentiment-extraction/sample_submission.csv"
-#     TOKENIZER = tokenizers.BertWordPieceTokenizer(
-#         f"{BERT_PATH}/vocab.txt",
-#         lowercase=True
+#     TOKENIZER = tokenizers.ByteLevelBPETokenizer(
+#         vocab_file=f"{BERT_PATH}/vocab.json",
+#         merges_file=f"{BERT_PATH}/merges.txt",
+#         lowercase=True,
+#         add_prefix_space=True
 #     )
 
 
 class LocalTrainConfig:
-    MAX_LEN = 128
-    TRAIN_BATCH_SIZE = 64
-    VALID_BATCH_SIZE = 16
+    MAX_LEN = 192
+    TRAIN_BATCH_SIZE = 32
+    VALID_BATCH_SIZE = 8
     EPOCHS = 5
-    BERT_PATH = "/data/tweet-sentiment-extraction/bert-base-uncased"
+    BERT_PATH = "/data/tweet-sentiment-extraction/roberta-base"
     MODEL_PATH = "model.bin"
     TRAINING_FILE = "/data/tweet-sentiment-extraction/train_folds.csv"
     TEST_FILE = "/data/tweet-sentiment-extraction/test.csv"
     TRAIN_FILE = "/data/tweet-sentiment-extraction/train.csv"
     SAMPLE_FILE = "/data/tweet-sentiment-extraction/sample_submission.csv"
-    TOKENIZER = tokenizers.BertWordPieceTokenizer(
-        f"{BERT_PATH}/vocab.txt",
-        lowercase=True
+    TOKENIZER = tokenizers.ByteLevelBPETokenizer(
+        vocab_file=f"{BERT_PATH}/vocab.json",
+        merges_file=f"{BERT_PATH}/merges.txt",
+        lowercase=True,
+        add_prefix_space=True
     )
 
 
@@ -207,7 +211,7 @@ def run(fold):
     print(f"Training is Starting for fold={fold}")
 
     # I'm training only for 3 epochs even though I specified 5!!!
-    for epoch in range(3):
+    for epoch in range(train_config.EPOCHS):
         train_fn(train_data_loader, model, optimizer, device, scheduler=scheduler)
         jaccard = eval_fn(valid_data_loader, model, device, epoch, fold)
         print(f"Jaccard Score = {jaccard}")
