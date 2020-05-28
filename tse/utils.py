@@ -2,6 +2,9 @@ import numpy as np
 import pandas as pd
 import torch
 from sklearn import model_selection
+import logging
+import random
+import sys
 
 
 class AverageMeter:
@@ -105,3 +108,26 @@ def create_folds(config):
         df.loc[val_, 'kfold'] = fold
 
     df.to_csv(config.TRAINING_FILE, index=False)
+
+
+def device():
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def get_logger():
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    root.addHandler(handler)
+    return root
+
+
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
