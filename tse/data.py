@@ -43,9 +43,9 @@ def process_data(tweet, selected_text, sentiment, tokenizer, max_len):
     targets_end = target_idx[-1]
 
     sentiment_id = {
-        'positive': 1313,
-        'negative': 2430,
-        'neutral': 7974
+        'positive': tokenizer.token_to_id('positive'),
+        'negative': tokenizer.token_to_id('negative'),
+        'neutral': tokenizer.token_to_id('neutral')
     }
 
     input_ids = [0] + [sentiment_id[sentiment]] + [2] + [2] + input_ids_orig + [2]
