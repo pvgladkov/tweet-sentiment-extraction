@@ -1,10 +1,12 @@
+import logging
+import os
+import random
+import sys
+
 import numpy as np
 import pandas as pd
 import torch
 from sklearn import model_selection
-import logging
-import random
-import sys
 
 
 class AverageMeter:
@@ -111,7 +113,8 @@ def create_folds(config):
 
 
 def device():
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device_num = os.environ.get('CUDA_NUM', 0)
+    return torch.device(f"cuda:{device_num}" if torch.cuda.is_available() else "cpu")
 
 
 def get_logger():
