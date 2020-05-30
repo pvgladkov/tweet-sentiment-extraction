@@ -104,8 +104,8 @@ def train_fn(data_loader_, model_, optimizer, scheduler):
         targets_end = d["targets_end"].to(device_, dtype=torch.long)
 
         model_.zero_grad()
-        outputs_start_, outputs_end_ = model_(ids=ids, mask=mask, token_type_ids=token_type_ids)
-        loss = loss_fn(outputs_start_, outputs_end_, targets_start, targets_end)
+        outputs_start_, outputs_end_, loss = model_(ids=ids, mask=mask, token_type_ids=token_type_ids,
+                                                    start=targets_start, end=targets_end, loss_fn=loss_fn)
 
         loss.backward()
         optimizer.step()
@@ -140,8 +140,8 @@ def eval_fn(data_loader, model, epoch, fold):
             targets_start = d["targets_start"].to(device_, dtype=torch.long)
             targets_end = d["targets_end"].to(device_, dtype=torch.long)
 
-            outputs_start_, outputs_end_ = model(ids=ids, mask=mask, token_type_ids=token_type_ids)
-            loss = loss_fn(outputs_start_, outputs_end_, targets_start, targets_end)
+            outputs_start_, outputs_end_, loss = model(ids=ids, mask=mask, token_type_ids=token_type_ids,
+                                                       start=targets_start, end=targets_end, loss_fn=loss_fn)
 
             jaccard_scores, filtered_outputs = _batch_jaccard(outputs_start_, outputs_end_, d)
             jaccards.update(np.mean(jaccard_scores), ids.size(0))
@@ -178,8 +178,7 @@ def run(fold):
     train_data_loader = DataLoader(
         train_dataset,
         batch_size=train_config.TRAIN_BATCH_SIZE,
-        num_workers=4
-    )
+        num_workers=4)
 
     valid_dataset = TweetDataset(
         train_config=train_config,
@@ -245,7 +244,8 @@ if __name__ == '__main__':
         scores.append((fold, j))
 
     sorted_scores = sorted(scores, key=lambda x: -x[1])
-    print(sorted_scores)
+    print([(f, round(j, 4)) for f, j in sorted_scores])
+    print(np.mean([j for _, j in sorted_scores]))
 
     models = []
     for fold, _ in sorted_scores[:5]:
@@ -268,7 +268,7 @@ if __name__ == '__main__':
         selected_text=df_test.selected_text.values
     )
 
-    data_loader = torch.utils.data.DataLoader(
+    data_loader = DataLoader(
         test_dataset,
         shuffle=False,
         batch_size=train_config.VALID_BATCH_SIZE,
@@ -286,7 +286,7 @@ if __name__ == '__main__':
             ends_list = []
 
             for model in models:
-                outputs_start, outputs_end = model(ids=ids, mask=mask, token_type_ids=token_type_ids)
+                outputs_start, outputs_end, _ = model(ids=ids, mask=mask, token_type_ids=token_type_ids)
                 starts_list.append(outputs_start)
                 ends_list.append(outputs_end)
 
