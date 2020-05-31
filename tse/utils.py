@@ -113,8 +113,12 @@ def create_folds(config):
 
 
 def device():
-    device_num = os.environ.get('CUDA_NUM', 0)
+    device_num = cuda_num()
     return torch.device(f"cuda:{device_num}" if torch.cuda.is_available() else "cpu")
+
+
+def cuda_num():
+    return os.environ.get('CUDA_NUM', 0)
 
 
 def get_logger():
@@ -134,3 +138,22 @@ def set_seed(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+
+def batch_jaccard(start_positions, end_positions, batch):
+    orig_tweet = batch['orig_tweet']
+    orig_selected = batch['orig_selected']
+    sentiment = batch['sentiment']
+    offsets = batch['offsets']
+
+    jaccard_scores = []
+    filtered_outputs_ = []
+    for px, tweet in enumerate(orig_tweet):
+        selected_tweet = orig_selected[px]
+        tweet_sentiment = sentiment[px]
+        f_output = bert_output_to_string(tweet, tweet_sentiment, start_positions[px], end_positions[px], offsets[px])
+
+        jaccard_score = jaccard(selected_tweet.strip(), f_output.strip())
+        jaccard_scores.append(jaccard_score)
+        filtered_outputs_.append(f_output)
+    return jaccard_scores, filtered_outputs_
