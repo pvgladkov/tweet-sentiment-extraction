@@ -14,6 +14,7 @@ from tse.data import TweetDataset
 from tse.models import TweetModel
 from tse.utils import create_folds, jaccard, AverageMeter, bert_output_to_string, EarlyStopping, set_seed, device
 from torch.utils.data import DataLoader
+import time
 
 
 # class KaggleTrainConfig:
@@ -39,7 +40,7 @@ class LocalTrainConfig:
     MAX_LEN = 192
     TRAIN_BATCH_SIZE = 32
     VALID_BATCH_SIZE = 8
-    EPOCHS = 5
+    EPOCHS = 4
     BERT_PATH = "/data/tweet-sentiment-extraction/roberta-base"
     MODEL_PATH = "model.bin"
     TRAINING_FILE = "/data/tweet-sentiment-extraction/train_folds.csv"
@@ -230,6 +231,8 @@ def run(fold):
 
 if __name__ == '__main__':
 
+    start = time.time()
+
     set_seed(14)
 
     create_folds(train_config)
@@ -308,3 +311,5 @@ if __name__ == '__main__':
     sample.loc[:, 'selected_text'] = final_output
     sample.selected_text = sample.selected_text.map(post_process)
     sample.to_csv("submission.csv", index=False)
+
+    print(f'time: {(time.time()-start)/60} m')

@@ -13,7 +13,9 @@ class TweetModel(transformers.BertPreTrainedModel):
         super(TweetModel, self).__init__(conf)
         self.bert = transformers.RobertaModel.from_pretrained(train_config.BERT_PATH, config=conf)
         dropout_p = 0.4
-        self.l0 = nn.Linear(768, 2)
+        self.l0 = nn.Linear(768, 256)
+        self.l1 = nn.Linear(256, 2)
+        self.gelu = GELU()
         self.dropouts = nn.ModuleList([nn.Dropout(dropout_p) for _ in range(4)])
         torch.nn.init.normal_(self.l0.weight, std=0.02)
 
@@ -26,13 +28,16 @@ class TweetModel(transformers.BertPreTrainedModel):
 
         out = 0.3*out[-1] + 0.2*out[-2] + 0.1*out[-3] + 0.1*out[-4] + 0.1*out[-5] + 0.1*out[-6] + 0.1*out[-7]
 
+        out = self.l0(out)
+        out = self.gelu(out)
+
         start_logits = None
         end_logits = None
         loss = None
         for i, dropout in enumerate(self.dropouts):
             if i == 0:
                 tmp_out = dropout(out)
-                logits = self.l0(tmp_out)
+                logits = self.l1(tmp_out)
                 start_logits, end_logits = logits.split(1, dim=-1)
                 start_logits = start_logits.squeeze(-1)
                 end_logits = end_logits.squeeze(-1)
@@ -40,7 +45,7 @@ class TweetModel(transformers.BertPreTrainedModel):
                     loss = loss_fn(start_logits, end_logits, start, end)
             else:
                 tmp_out = dropout(out)
-                logits = self.l0(tmp_out)
+                logits = self.l1(tmp_out)
                 tmp_start_logits, tmp_end_logits = logits.split(1, dim=-1)
 
                 tmp_start_logits = tmp_start_logits.squeeze(-1)
