@@ -78,3 +78,16 @@ avg 0.70900
 avg 0.70873
 time 116m
 public 0.712
+
+### roBERTa multi-sample dropout 1 0.1 + lin + gelu 5 epoch 2 head
+[(4, 0.7117), (2, 0.7102), (0, 0.7057), (3, 0.7051), (1, 0.7034)]
+avg 0.70723
+
+### roBERTa 2 слоя multi-sample dropout 4 0.4 + lin + gelu 5 epoch
+[(0, 0.7101), (4, 0.7086), (2, 0.7057), (1, 0.7038), (3, 0.7023)]
+avg 0.70609
+
+### (v25) roBERTa 2 слоя (cat -1) multi-sample dropout 4 0.4 + lin + gelu 5 epoch, xavier_normal
+[(0, 0.7127), (4, 0.7123), (1, 0.7083), (2, 0.7074), (3, 0.7045)]
+avg 0.70904
+public 0.712

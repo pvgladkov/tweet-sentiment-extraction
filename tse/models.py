@@ -25,11 +25,11 @@ class TweetModel(transformers.BertPreTrainedModel):
         super(TweetModel, self).__init__(conf)
         self.bert = transformers.RobertaModel.from_pretrained(train_config.BERT_PATH, config=conf)
         dropout_p = 0.4
-        self.l0 = nn.Linear(768, 256)
+        self.l0 = nn.Linear(768 * 2, 256)
         self.l1 = nn.Linear(256, 2)
         self.gelu = GELU()
         self.dropouts = nn.ModuleList([nn.Dropout(dropout_p) for _ in range(4)])
-        torch.nn.init.normal_(self.l0.weight, std=0.02)
+        torch.nn.init.xavier_normal_(self.l0.weight)
 
     @staticmethod
     def loss_fn(start_logits, end_logits, start_positions, end_positions):
@@ -46,7 +46,7 @@ class TweetModel(transformers.BertPreTrainedModel):
             token_type_ids=token_type_ids
         )
 
-        out = 0.3*out[-1] + 0.2*out[-2] + 0.1*out[-3] + 0.1*out[-4] + 0.1*out[-5] + 0.1*out[-6] + 0.1*out[-7]
+        out = torch.cat((out[-1], out[-2]), dim=-1)
 
         out = self.l0(out)
         out = self.gelu(out)
@@ -99,16 +99,21 @@ class Head(nn.Module):
         self.l0 = nn.Linear(768, 256)
         self.l1 = nn.Linear(256, 1)
         self.gelu = GELU()
-        self.dropout = nn.Dropout(0.4)
+        self.dropout = nn.Dropout(0.1)
 
     def forward(self, x):
-        out = self.dropout(x)
+        out = self.l0(x)
+        out = self.gelu(out)
+        out = self.dropout(out)
         out = self.l1(out)
         out = out.squeeze(-1)
         return out
 
 
 class TweetModelTwoHead(TweetModel):
+
+    prefix = 'roberta2h'
+
     def __init__(self, train_config, conf):
         super(TweetModelTwoHead, self).__init__(train_config, conf)
         self.start_head = Head()
@@ -122,8 +127,6 @@ class TweetModelTwoHead(TweetModel):
         )
 
         out = 0.3*out[-1] + 0.2*out[-2] + 0.1*out[-3] + 0.1*out[-4] + 0.1*out[-5] + 0.1*out[-6] + 0.1*out[-7]
-        out = self.l0(out)
-        out = self.gelu(out)
 
         start_out = self.start_head(out)
         end_out = self.end_head(out)
