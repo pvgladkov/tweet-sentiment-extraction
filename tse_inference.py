@@ -5,28 +5,35 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from configs import LocalTrainConfig
+from configs import LocalTrainConfig, KaggleTrainConfig
 from tse.data import TweetDataset
 from tse.models import load_model
 from tse.utils import set_seed, device, batch_jaccard, cuda_num
 
-train_config = LocalTrainConfig()
+SUBMIT = False
 
 
 if __name__ == '__main__':
-    set_seed(14)
+
+    if SUBMIT:
+        train_config = KaggleTrainConfig()
+        map_location = {'cuda:0': 'cuda:0', 'cuda:1': 'cuda:0', 'cuda:2': 'cuda:0', 'cuda:3': 'cuda:0'}
+        cuda_n = ''
+    else:
+        train_config = LocalTrainConfig()
+        map_location = None
+        cuda_n = cuda_num()
 
     start_time = time.time()
     device_ = device()
-    cuda_num_ = cuda_num()
 
     models = []
     for fold in range(5):
-        print(f"loading model_{fold}_{cuda_num_}.bin")
+        print(f"loading model_{fold}_{cuda_n}.bin")
         model = load_model(train_config, device_)
         model.load_state_dict(
-            torch.load(f"{train_config.WEIGHTS_DIR}/{model.prefix}_model_{fold}_{cuda_num_}.bin",
-                       map_location=None)
+            torch.load(f"{train_config.WEIGHTS_DIR}/{model.prefix}_model_{fold}_{cuda_n}.bin",
+                       map_location=map_location)
         )
         model.eval()
         models.append(model)

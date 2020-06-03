@@ -5,7 +5,7 @@ import numpy as np
 
 
 def load_model(train_config, device):
-    model_config = transformers.BertConfig.from_pretrained(train_config.BERT_PATH)
+    model_config = transformers.RobertaConfig.from_pretrained(train_config.BERT_PATH)
     model_config.output_hidden_states = True
     model = TweetModel(train_config, conf=model_config)
     model.to(device)

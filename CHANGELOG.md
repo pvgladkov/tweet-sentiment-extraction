@@ -71,3 +71,10 @@ avg 0.70900
 
 ### roBERTa multi-sample dropout 4 0.4 + lin + gelu 4 epoch 2 head (l0 общий)
 [(4, 0.7115), (0, 0.7097), (2, 0.7081), (1, 0.7045), (3, 0.6991)]
+
+
+### (v24) roBERTa multi-sample dropout 4 0.4 + lin + gelu 5 epoch
+[(1, 0.7108), (4, 0.7106), (0, 0.7103), (2, 0.7083), (3, 0.7037)]
+avg 0.70873
+time 116m
+public 0.712
