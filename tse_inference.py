@@ -64,18 +64,22 @@ if __name__ == '__main__':
             token_type_ids = d["token_type_ids"].to(device_, dtype=torch.long)
             mask = d["mask"].to(device_, dtype=torch.long)
 
-            starts_list = []
-            ends_list = []
+            start_probs_list = []
+            end_probs_list = []
 
             for model in models:
                 outputs_start, outputs_end, _ = model(ids=ids, mask=mask, token_type_ids=token_type_ids)
-                starts_list.append(outputs_start)
-                ends_list.append(outputs_end)
+                start_probs, end_probs = model.softmax(outputs_start, outputs_end)
+                start_probs_list.append(start_probs)
+                end_probs_list.append(end_probs)
 
-            outputs_start = (starts_list[0] + starts_list[1] + starts_list[2] + starts_list[3] + starts_list[4]) / len(starts_list)
-            outputs_end = (ends_list[0] + ends_list[1] + ends_list[2] + ends_list[3] + ends_list[4]) / len(ends_list)
+            outputs_start = (start_probs_list[0] + start_probs_list[1] + start_probs_list[2] +
+                             start_probs_list[3] + start_probs_list[4]) / len(start_probs_list)
 
-            start_positions, end_positions = models[0].to_positions(outputs_start, outputs_end)
+            outputs_end = (end_probs_list[0] + end_probs_list[1] + end_probs_list[2] +
+                           end_probs_list[3] + end_probs_list[4]) / len(end_probs_list)
+
+            start_positions, end_positions = models[0].probs_to_positions(outputs_start, outputs_end)
 
             _, filtered_outputs = batch_jaccard(start_positions, end_positions, d)
             for s in filtered_outputs:

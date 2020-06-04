@@ -85,11 +85,21 @@ class TweetModel(transformers.BertPreTrainedModel):
         return start_logits, end_logits, loss
 
     @staticmethod
-    def to_positions(start_logits, end_logits):
+    def softmax(start_logits, end_logits):
         outputs_start_ = torch.softmax(start_logits, dim=1).cpu().detach().numpy()
         outputs_end_ = torch.softmax(end_logits, dim=1).cpu().detach().numpy()
-        start_positions = np.argmax(outputs_start_, axis=1)
-        end_positions = np.argmax(outputs_end_, axis=1)
+        return outputs_start_, outputs_end_
+
+    @staticmethod
+    def probs_to_positions(start_probs, end_probs):
+        start_positions = np.argmax(start_probs, axis=1)
+        end_positions = np.argmax(end_probs, axis=1)
+        return start_positions, end_positions
+
+    @classmethod
+    def to_positions(cls, start_logits, end_logits):
+        start_probs, end_probs = cls.softmax(start_logits, end_logits)
+        start_positions, end_positions = cls.probs_to_positions(start_probs, end_probs)
         return start_positions, end_positions
 
 
