@@ -2,8 +2,6 @@ import torch
 import transformers
 from torch import nn as nn
 import numpy as np
-from tse.utils import device as device_func
-import torch.nn.functional as F
 
 
 def load_model(train_config, device):
@@ -36,21 +34,11 @@ class TweetModel(transformers.BertPreTrainedModel):
     @staticmethod
     def loss_fn(start_logits, end_logits, start_positions, end_positions):
         loss_fct = nn.CrossEntropyLoss()
-        ranking_loss_fct = nn.MarginRankingLoss()
 
         start_loss = loss_fct(start_logits, start_positions)
         end_loss = loss_fct(end_logits, end_positions)
 
-        pos_target = np.ones(end_logits.shape)
-        for i, end in enumerate(end_positions):
-            pos_target[i, end:] = -1
-        pos_target = torch.tensor(pos_target, dtype=torch.long).to(device_func())
-
-        ranking_loss = ranking_loss_fct(F.log_softmax(start_logits, dim=1),
-                                        F.log_softmax(end_logits, dim=1),
-                                        pos_target)
-
-        total_loss = (start_loss + end_loss + 0.5 * ranking_loss)
+        total_loss = (start_loss + end_loss)
         return total_loss
 
     def forward(self, ids, mask, token_type_ids, start=None, end=None):
