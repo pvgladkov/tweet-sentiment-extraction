@@ -65,6 +65,7 @@ class EarlyStopping:
             self.best_score = score
             self.save_checkpoint(epoch_score, model, model_path)
             self.counter = 0
+        return self.best_score
 
     def save_checkpoint(self, epoch_score, model, model_path):
         if epoch_score not in [-np.inf, np.inf, -np.nan, np.nan]:
@@ -148,12 +149,20 @@ def batch_jaccard(start_positions, end_positions, batch):
 
     jaccard_scores = []
     filtered_outputs_ = []
+
+    wrong_order_count = 0
+
     for px, tweet in enumerate(orig_tweet):
         selected_tweet = orig_selected[px]
         tweet_sentiment = sentiment[px]
+
+        if end_positions[px] < start_positions[px]:
+            wrong_order_count += 1
+
         f_output = bert_output_to_string(tweet, tweet_sentiment, start_positions[px], end_positions[px], offsets[px])
 
         jaccard_score = jaccard(selected_tweet.strip(), f_output.strip())
         jaccard_scores.append(jaccard_score)
         filtered_outputs_.append(f_output)
-    return jaccard_scores, filtered_outputs_
+
+    return jaccard_scores, filtered_outputs_, wrong_order_count

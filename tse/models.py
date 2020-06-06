@@ -2,6 +2,8 @@ import torch
 import transformers
 from torch import nn as nn
 import numpy as np
+from tse.utils import device as device_func
+import torch.nn.functional as F
 
 
 def load_model(train_config, device):
@@ -34,9 +36,21 @@ class TweetModel(transformers.BertPreTrainedModel):
     @staticmethod
     def loss_fn(start_logits, end_logits, start_positions, end_positions):
         loss_fct = nn.CrossEntropyLoss()
+        ranking_loss_fct = nn.MarginRankingLoss()
+
         start_loss = loss_fct(start_logits, start_positions)
         end_loss = loss_fct(end_logits, end_positions)
-        total_loss = (start_loss + end_loss)
+
+        pos_target = np.ones(end_logits.shape)
+        for i, end in enumerate(end_positions):
+            pos_target[i, end:] = -1
+        pos_target = torch.tensor(pos_target, dtype=torch.long).to(device_func())
+
+        ranking_loss = ranking_loss_fct(F.log_softmax(start_logits, dim=1),
+                                        F.log_softmax(end_logits, dim=1),
+                                        pos_target)
+
+        total_loss = (start_loss + end_loss + 0.5 * ranking_loss)
         return total_loss
 
     def forward(self, ids, mask, token_type_ids, start=None, end=None):
@@ -106,7 +120,7 @@ class TweetModel(transformers.BertPreTrainedModel):
 class Head(nn.Module):
     def __init__(self):
         super(Head, self).__init__()
-        self.l0 = nn.Linear(768, 256)
+        self.l0 = nn.Linear(768 * 2, 256)
         self.l1 = nn.Linear(256, 1)
         self.gelu = GELU()
         self.dropout = nn.Dropout(0.1)
@@ -136,7 +150,7 @@ class TweetModelTwoHead(TweetModel):
             token_type_ids=token_type_ids
         )
 
-        out = 0.3*out[-1] + 0.2*out[-2] + 0.1*out[-3] + 0.1*out[-4] + 0.1*out[-5] + 0.1*out[-6] + 0.1*out[-7]
+        out = torch.cat((out[-1], out[-2]), dim=-1)
 
         start_out = self.start_head(out)
         end_out = self.end_head(out)

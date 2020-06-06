@@ -57,6 +57,7 @@ if __name__ == '__main__':
         num_workers=1
     )
 
+    wrong_order_count = 0
     with torch.no_grad():
         tk0 = tqdm(data_loader, total=len(data_loader))
         for bi, d in enumerate(tk0):
@@ -81,7 +82,8 @@ if __name__ == '__main__':
 
             start_positions, end_positions = models[0].probs_to_positions(outputs_start, outputs_end)
 
-            _, filtered_outputs = batch_jaccard(start_positions, end_positions, d)
+            _, filtered_outputs, wrong_order_ = batch_jaccard(start_positions, end_positions, d)
+            wrong_order_count += wrong_order_
             for s in filtered_outputs:
                 final_output.append(s)
 
@@ -91,6 +93,7 @@ if __name__ == '__main__':
     def post_process(selected):
         return " ".join(set(selected.lower().split()))
 
+    print(f'wrong order {wrong_order_count}')
 
     sample = pd.read_csv(train_config.SAMPLE_FILE)
     sample.loc[:, 'selected_text'] = final_output

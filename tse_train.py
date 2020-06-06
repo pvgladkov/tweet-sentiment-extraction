@@ -41,7 +41,7 @@ def train_fn(data_loader_, model_, optimizer, scheduler):
         scheduler.step()
 
         start_positions, end_positions = model_.to_positions(outputs_start_, outputs_end_)
-        jaccard_scores, _ = batch_jaccard(start_positions, end_positions, d)
+        jaccard_scores, _, _ = batch_jaccard(start_positions, end_positions, d)
 
         jaccards.update(np.mean(jaccard_scores), ids.size(0))
         losses.update(loss.item(), ids.size(0))
@@ -61,6 +61,7 @@ def eval_fn(data_loader, model_, epoch, fold):
 
     device_ = device()
 
+    wrong_order_count = 0
     with torch.no_grad():
         tk0 = tqdm(data_loader, total=len(data_loader))
         for bi, d in enumerate(tk0):
@@ -74,7 +75,9 @@ def eval_fn(data_loader, model_, epoch, fold):
                                                         start=targets_start, end=targets_end)
 
             start_positions, end_positions = model_.to_positions(outputs_start_, outputs_end_)
-            jaccard_scores, filtered_outputs = batch_jaccard(start_positions, end_positions, d)
+            jaccard_scores, filtered_outputs, wrong_order_ = batch_jaccard(start_positions, end_positions, d)
+
+            wrong_order_count += wrong_order_
             jaccards.update(np.mean(jaccard_scores), ids.size(0))
             losses.update(loss.item(), ids.size(0))
             tk0.set_postfix(loss=losses.avg, jaccard=jaccards.avg)
@@ -85,6 +88,7 @@ def eval_fn(data_loader, model_, epoch, fold):
             target_texts += d['orig_selected']
             sentiments += d['sentiment']
 
+    print(f'wrong order {wrong_order_count}')
     df = pd.DataFrame({'tweet': tweets, 'target_text': target_texts,
                        'predicted_text': predicted_texts, 'sentiment': sentiments, 'scores': scores_})
     file_name = f'debug_{epoch}_{fold}.csv'
@@ -145,16 +149,16 @@ def run(fold):
     es = EarlyStopping(patience=2, mode="max", delta=0.001)
     print(f"Training is Starting for fold={fold}")
 
-    jaccard_ = 0
+    best_jaccard = 0
     for epoch in range(train_config.EPOCHS):
         train_fn(train_data_loader, model, optimizer, scheduler=scheduler)
         jaccard_ = eval_fn(valid_data_loader, model, epoch, fold)
         print(f"Jaccard Score = {jaccard_}")
-        es(jaccard_, model, model_path=f"{train_config.WEIGHTS_DIR}/{model.prefix}_model_{fold}_{cuda_num()}.bin")
+        best_jaccard = es(jaccard_, model, model_path=f"{train_config.WEIGHTS_DIR}/{model.prefix}_model_{fold}_{cuda_num()}.bin")
         if es.early_stop:
             print("Early stopping")
             break
-    return jaccard_
+    return float(best_jaccard)
 
 
 if __name__ == '__main__':
