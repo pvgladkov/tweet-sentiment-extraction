@@ -21,8 +21,14 @@ $ kaggle competitions download -c tweet-sentiment-extraction -p /data/tweet-sent
 ### Run
 
 ```bash
-$ python arc_run.py
+$ python tse_train.py
 ```
 
 ## Related sources
+
+1. [RoBERTa: A Robustly Optimized BERT Pretraining Approach](https://arxiv.org/abs/1907.11692).
+
+2. [Multi-Sample Dropout for Accelerated Training and Better Generalization](https://arxiv.org/abs/1905.09788).
+
+3. [Gaussian Error Linear Units (GELUs)](https://arxiv.org/abs/1606.08415).
 
